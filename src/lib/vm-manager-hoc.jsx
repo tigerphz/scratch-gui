@@ -6,6 +6,7 @@ import {connect} from 'react-redux';
 import VM from 'scratch-vm';
 import AudioEngine from 'scratch-audio';
 
+import {setProjectUnchanged} from '../reducers/project-changed';
 import {
     LoadingStates,
     getIsLoadingWithId,
@@ -32,6 +33,7 @@ const vmManagerHOC = function (WrappedComponent) {
                 this.props.vm.attachAudioEngine(this.audioEngine);
                 this.props.vm.setCompatibilityMode(true);
                 this.props.vm.initialized = true;
+                this.props.vm.setLocale(this.props.locale, this.props.messages);
             }
             if (!this.props.isPlayerOnly && !this.props.isStarted) {
                 this.props.vm.start();
@@ -53,6 +55,9 @@ const vmManagerHOC = function (WrappedComponent) {
             return this.props.vm.loadProject(this.props.projectData)
                 .then(() => {
                     this.props.onLoadedProject(this.props.loadingState, this.props.canSave);
+                    // Wrap in a setTimeout because skin loading in
+                    // the renderer can be async.
+                    setTimeout(() => this.props.onSetProjectUnchanged());
 
                     // If the vm is not running, call draw on the renderer manually
                     // This draws the state of the loaded project with no blocks running
@@ -74,9 +79,12 @@ const vmManagerHOC = function (WrappedComponent) {
                 /* eslint-disable no-unused-vars */
                 fontsLoaded,
                 loadingState,
+                locale,
+                messages,
                 isStarted,
                 onError: onErrorProp,
                 onLoadedProject: onLoadedProjectProp,
+                onSetProjectUnchanged,
                 projectData,
                 /* eslint-enable no-unused-vars */
                 isLoadingWithId: isLoadingWithIdProp,
@@ -99,9 +107,13 @@ const vmManagerHOC = function (WrappedComponent) {
         fontsLoaded: PropTypes.bool,
         isLoadingWithId: PropTypes.bool,
         isPlayerOnly: PropTypes.bool,
+        isStarted: PropTypes.bool,
         loadingState: PropTypes.oneOf(LoadingStates),
+        locale: PropTypes.string,
+        messages: PropTypes.objectOf(PropTypes.string),
         onError: PropTypes.func,
         onLoadedProject: PropTypes.func,
+        onSetProjectUnchanged: PropTypes.func,
         projectData: PropTypes.oneOfType([PropTypes.object, PropTypes.string]),
         projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
         username: PropTypes.string,
@@ -111,7 +123,10 @@ const vmManagerHOC = function (WrappedComponent) {
     const mapStateToProps = state => {
         const loadingState = state.scratchGui.projectState.loadingState;
         return {
+            fontsLoaded: state.scratchGui.fontsLoaded,
             isLoadingWithId: getIsLoadingWithId(loadingState),
+            locale: state.locales.locale,
+            messages: state.locales.messages,
             projectData: state.scratchGui.projectState.projectData,
             projectId: state.scratchGui.projectState.projectId,
             loadingState: loadingState,
@@ -123,7 +138,8 @@ const vmManagerHOC = function (WrappedComponent) {
     const mapDispatchToProps = dispatch => ({
         onError: error => dispatch(projectError(error)),
         onLoadedProject: (loadingState, canSave) =>
-            dispatch(onLoadedProject(loadingState, canSave))
+            dispatch(onLoadedProject(loadingState, canSave, true)),
+        onSetProjectUnchanged: () => dispatch(setProjectUnchanged())
     });
 
     // Allow incoming props to override redux-provided props. Used to mock in tests.

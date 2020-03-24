@@ -1,4 +1,4 @@
-jasmine.DEFAULT_TIMEOUT_INTERVAL = 30000; // eslint-disable-line no-undef
+jest.setTimeout(30000); // eslint-disable-line no-undef
 
 import bindAll from 'lodash.bindall';
 import 'chromedriver'; // register path
@@ -8,12 +8,18 @@ const {By, until, Button} = webdriver;
 
 const USE_HEADLESS = process.env.USE_HEADLESS !== 'no';
 
+// The main reason for this timeout is so that we can control the timeout message and report details;
+// if we hit the Jasmine default timeout then we get a terse message that we can't control.
+// The Jasmine default timeout is 30 seconds so make sure this is lower.
+const DEFAULT_TIMEOUT_MILLISECONDS = 20 * 1000;
+
 class SeleniumHelper {
     constructor () {
         bindAll(this, [
             'clickText',
             'clickButton',
             'clickXpath',
+            'elementIsVisible',
             'findByText',
             'findByXpath',
             'getDriver',
@@ -22,6 +28,12 @@ class SeleniumHelper {
             'loadUri',
             'rightClickText'
         ]);
+
+        this.Key = webdriver.Key; // map Key constants, for sending special keys
+    }
+
+    elementIsVisible (element, timeoutMessage = 'elementIsVisible timed out') {
+        return this.driver.wait(until.elementIsVisible(element), DEFAULT_TIMEOUT_MILLISECONDS, timeoutMessage);
     }
 
     get scope () {
@@ -43,6 +55,14 @@ class SeleniumHelper {
         if (USE_HEADLESS) {
             args.push('--headless');
         }
+
+        // Stub getUserMedia to always not allow access
+        args.push('--use-fake-ui-for-media-stream=deny');
+
+        // Suppress complaints about AudioContext starting before a user gesture
+        // This is especially important on Windows, where Selenium directs JS console messages to stdout
+        args.push('--autoplay-policy=no-user-gesture-required');
+
         chromeCapabilities.set('chromeOptions', {args});
         chromeCapabilities.setLoggingPrefs({
             performance: 'ALL'
@@ -69,8 +89,12 @@ class SeleniumHelper {
         return this.driver;
     }
 
-    findByXpath (xpath) {
-        return this.driver.wait(until.elementLocated(By.xpath(xpath), 5 * 1000));
+    findByXpath (xpath, timeoutMessage = `findByXpath timed out for path: ${xpath}`) {
+        return this.driver.wait(until.elementLocated(By.xpath(xpath)), DEFAULT_TIMEOUT_MILLISECONDS, timeoutMessage)
+            .then(el => (
+                this.driver.wait(el.isDisplayed(), DEFAULT_TIMEOUT_MILLISECONDS, `${xpath} is not visible`)
+                    .then(() => el)
+            ));
     }
 
     findByText (text, scope) {
